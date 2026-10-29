@@ -81,7 +81,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/traitlets-5.16.1-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.16.0-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026e-h5d301ff_0.conda
-      - pypi: ./src/example_project
+      - pypi: ./src/vbd_model
       - pypi: git+https://github.com/monash-emu/summer4.git?rev=6f1101f83692ec0f59154d7ea3ce25ab093b90c1#6f1101f83692ec0f59154d7ea3ce25ab093b90c1
       - pypi: https://files.pythonhosted.org/packages/00/0b/b170089cd44848f25dbc9efda08e5aa4a8402d9a13f0d4d0f3d7808be539/wadler_lindig-0.1.8-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1a/69/ee613f74085ca7103f79cd08d579c4f3177d1d26e5d3d9528d2d6536a707/nbformat-5.11.1-py3-none-any.whl
@@ -185,7 +185,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tornado-6.5.10-py313ha083069_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/wcwidth-0.9.4-py311h8794d7f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zeromq-4.3.5-h6eb0046_12.conda
-      - pypi: ./src/example_project
+      - pypi: ./src/vbd_model
       - pypi: git+https://github.com/monash-emu/summer4.git?rev=6f1101f83692ec0f59154d7ea3ce25ab093b90c1#6f1101f83692ec0f59154d7ea3ce25ab093b90c1
       - pypi: https://files.pythonhosted.org/packages/00/0b/b170089cd44848f25dbc9efda08e5aa4a8402d9a13f0d4d0f3d7808be539/wadler_lindig-0.1.8-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1a/69/ee613f74085ca7103f79cd08d579c4f3177d1d26e5d3d9528d2d6536a707/nbformat-5.11.1-py3-none-any.whl
@@ -1541,8 +1541,8 @@ packages:
     - zeromq >=4.3.5,<4.4.0a0
   size: 244219
   timestamp: 1789076600961
-- pypi: ./src/example_project
-  name: example-project
+- pypi: ./src/vbd_model
+  name: vbd-model
   requires_python: '>=3.10'
 - pypi: git+https://github.com/monash-emu/summer4.git?rev=6f1101f83692ec0f59154d7ea3ce25ab093b90c1#6f1101f83692ec0f59154d7ea3ce25ab093b90c1
   name: summer4

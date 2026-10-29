@@ -1,9 +1,22 @@
-# summer4template
+# vbd-summer4
 
-A small pixi template for [summer4](https://github.com/monash-emu/summer4) projects.
+A basic synthetic vector-borne disease model in [summer4](https://github.com/monash-emu/summer4),
+started from [monash-emu/summer4template](https://github.com/monash-emu/summer4template).
+No real data; all parameters are illustrative.
 
-`notebooks/01-Example.ipynb` builds an age-stratified SIR model, runs it, makes
-synthetic weekly observations from it, and calibrates the two parameters with NUTS.
+- **Humans**: SEIRS in four age bands (0–4, 5–14, 15–39, 40+), with ageing, and births
+  replacing deaths.
+- **Mosquitoes**: SEI (with an extrinsic incubation period) and a constant population.
+- **Transmission**: Ross–Macdonald biting. Each age band has a relative bite rate
+  (`rel_bite_<age>`, which shares out mosquito bites) and a relative susceptibility
+  (`rel_susc_<age>`).
+
+| Path | What it is |
+|---|---|
+| `src/vbd_model/vbd_model/model.py` | `build_model()`, `DEFAULT_PARAMS`, and `r0()` (next-generation matrix) |
+| `tests/test_model.py` | edges, conservation, hand-checked infection rates, R0 = 1 threshold |
+| `notebooks/02-Vector-model.ipynb` | ten-year run, incidence and immunity by age, a halved-bite-rate scenario |
+| `notebooks/01-Example.ipynb` | the template's SIR example with calibration, kept for reference |
 
 ```bash
 pixi install
@@ -26,8 +39,7 @@ summer4 is pinned to a commit in `pixi.toml` (currently `v0.3.0a1`). To move to 
 newer summer4, change `tag` there, run `pixi update summer4`, update the guide, and run
 `pixi run check`.
 
-Put your own code in `src/vbd_model` (installed in editable mode), and
-rename it to suit.
+Model code lives in `src/vbd_model` (installed in editable mode).
 
 ## Coding agents
 
