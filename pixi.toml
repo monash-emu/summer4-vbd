@@ -1,0 +1,25 @@
+[workspace]
+channels = ["conda-forge"]
+name = "vbd-summer4"
+platforms = ["osx-arm64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+api = { cmd = "python tools/summer4_api.py", description = "Look up the installed summer4 API: pixi run api [NAME | --search WORD | --source NAME | --where]" }
+check = { cmd = "python tools/check.py", description = "Run the tests, then every notebook headless (--quick: tests only)" }
+clear-notebooks = { cmd = "python tools/clear_notebooks.py", description = "Clear outputs from every notebook before committing" }
+
+[dependencies]
+python = "3.13.*"
+ipykernel = ">=7.2.0,<8"
+
+[pypi-dependencies]
+# summer4 main (0.3.0a1, untagged)
+summer4 = { git = "https://github.com/monash-emu/summer4.git", rev = "6f1101f83692ec0f59154d7ea3ce25ab093b90c1", extras = ["calibration", "pandas", "frames"] }
+vbd_model = { path = "src/vbd_model", editable = true }
+arviz = { version = ">=1.0, <2", extras = ["plotly"] }
+plotly = ">=6.6.0, <7"
+ipywidgets = ">=8.1.8, <9"
+nbformat = ">=5.10.4, <6"
+nbclient = ">=0.10, <1"
+pytest = ">=8, <10"
