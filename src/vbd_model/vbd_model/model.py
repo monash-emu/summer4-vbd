@@ -3,7 +3,8 @@
 Humans are SEIRS and age-stratified; mosquitoes are SEI and unstratified. The two
 populations are coupled by Ross-Macdonald biting:
 
-- Each mosquito bites ``bite_rate`` times per day. A bite lands on age group ``j`` with
+- Each mosquito bites ``bite_rate * (1 - bite_reduction)`` times per day, where
+  ``bite_reduction`` (an intervention such as bednets) applies from ``intervention_start``. A bite lands on age group ``j`` with
   probability ``w_j N_j / W``, where ``w_j`` is that group's relative attractiveness
   (``rel_bite_<j>``) and ``W = sum_j w_j N_j`` is the bite-weighted human population.
 - Force of infection on susceptible humans in age ``j``:
@@ -12,8 +13,10 @@ populations are coupled by Ross-Macdonald biting:
 - Force of infection on susceptible mosquitoes:
   ``bite_rate * p_hm * sum_j w_j I_j / W``.
 
-Both populations are kept constant: human births replace deaths and mosquito emergence
-replaces mosquito deaths. Time is in days.
+Human births replace deaths, so the human population is constant. Mosquito emergence is
+seasonal: ``M0 / mosquito_lifespan * (1 + seasonal_amplitude * cos(2 pi (t - peak_emergence_day) / 365))``,
+so the mosquito population cycles each year around a mean of ``M0`` (``mosquitoes_per_human``
+per human). Time is in days from 1 January.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from __future__ import annotations
 import numpy as np
 
 from summer4 import (
+    Time,
     EntryFlow,
     ExitFlow,
     FlowModel,
@@ -33,6 +37,7 @@ from summer4 import (
     TraitChain,
     TransitionFlow,
 )
+from summer4.timevarying import step
 
 species = Property("species", ["human", "mosquito"])
 hstate = Property("hstate", ["S", "E", "I", "R"])
@@ -40,7 +45,7 @@ mstate = Property("mstate", ["S", "E", "I"])
 age = Property("age", ["0", "5", "15", "40"])  # lower bounds of the age bands, in years
 
 HUMANS = 100_000.0
-MOSQUITOES_PER_HUMAN = 5.0  # sets the (constant) mosquito population
+MOSQUITOES_PER_HUMAN = 5.0  # mean mosquito density over the seasonal cycle
 OLDEST_BAND_YEARS = 30.0  # mean time spent in the 40+ band before death
 # Band widths in years; the initial age split is proportional to them, which is the
 # equilibrium of the ageing chain, so the age structure does not drift during a run.
@@ -53,10 +58,15 @@ DEFAULT_PARAMS = {
     "p_hm": 0.4,  # probability a bite on an infectious human infects the mosquito
     "mosquito_lifespan": 10.0,  # days
     "eip": 10.0,  # extrinsic incubation period, days
+    "seasonal_amplitude": 0.8,  # relative swing in emergence (0 = no seasonality, < 1)
+    "peak_emergence_day": 45.0,  # day of year when emergence peaks
+    # Intervention: proportional reduction in bites per mosquito, from intervention_start
+    "bite_reduction": 0.0,
+    "intervention_start": 5 * 365.0,  # days
     # Human natural history
     "human_latent": 5.0,  # days
     "human_infectious": 7.0,  # days
-    "immunity_duration": 2 * 365.0,  # days
+    "immunity_duration": 365.0,  # days
     # Age heterogeneity: relative attractiveness to mosquitoes ...
     "rel_bite_0": 0.5,
     "rel_bite_5": 0.8,
@@ -90,16 +100,22 @@ def build_model(seed_infectious: float = 0.001, mosquitoes_per_human: float = MO
     """Build the uncompiled model.
 
     ``seed_infectious`` is the fraction of humans infectious at time 0 (mosquitoes start
-    uninfected). ``mosquitoes_per_human`` sets the initial (and constant) mosquito
-    population; it is structural, so changing it needs a rebuild.
+    uninfected). ``mosquitoes_per_human`` sets the initial and mean mosquito population;
+    it is structural, so changing it needs a rebuild.
     """
     model = FlowModel(build_pmap())
+    mean_mosquitoes = HUMANS * mosquitoes_per_human
+
+    # Bites per mosquito per day, reduced by the intervention once it starts
+    bites = Param("bite_rate") * (
+        1.0 - step(Time(), [Param("intervention_start")], [0.0, Param("bite_reduction")])
+    )
 
     bite_weighted = _weighted_humans()
     infectious_mosquitoes = Reduce(where=mstate["I"])
 
     # Humans: infection, with per-age bite and susceptibility multipliers
-    human_foi = Param("bite_rate") * Param("p_mh") * infectious_mosquitoes / bite_weighted
+    human_foi = bites * Param("p_mh") * infectious_mosquitoes / bite_weighted
     model.add_flow(
         TransitionFlow(
             "human_infection",
@@ -134,17 +150,22 @@ def build_model(seed_infectious: float = 0.001, mosquitoes_per_human: float = MO
     model.add_flow(EntryFlow("human_birth", hstate["S"] & age["0"], human_death.sum_by()))
 
     # Mosquitoes: infection from biting infectious humans, extrinsic incubation
-    mosquito_foi = Param("bite_rate") * Param("p_hm") * _weighted_humans(hstate["I"]) / bite_weighted
+    mosquito_foi = bites * Param("p_hm") * _weighted_humans(hstate["I"]) / bite_weighted
     model.add_flow(TransitionFlow("mosquito_infection", mstate["S"], mstate["E"], mosquito_foi))
     model.add_flow(TransitionFlow("mosquito_incubation", mstate["E"], mstate["I"], 1.0 / Param("eip")))
 
-    # Mosquito demography: constant population, emergence replaces deaths
-    mosquito_death = model.add_flow(ExitFlow("mosquito_death", species["mosquito"], 1.0 / Param("mosquito_lifespan")))
-    model.add_flow(EntryFlow("mosquito_emergence", mstate["S"], mosquito_death.sum_by()))
+    # Mosquito demography: seasonal emergence (people per day), averaging mean_mosquitoes / lifespan
+    model.add_flow(ExitFlow("mosquito_death", species["mosquito"], 1.0 / Param("mosquito_lifespan")))
+    season = 1.0 + Param("seasonal_amplitude") * np.cos(
+        2 * np.pi * (Time() - Param("peak_emergence_day")) / 365.0
+    )
+    model.add_flow(
+        EntryFlow("mosquito_emergence", mstate["S"], mean_mosquitoes / Param("mosquito_lifespan") * season)
+    )
 
     total_years = sum(BAND_YEARS.values())
     base = {age[a]: HUMANS * BAND_YEARS[a] / total_years for a in age.traits}
-    base[mstate["S"]] = HUMANS * mosquitoes_per_human
+    base[mstate["S"]] = mean_mosquitoes
     model.set_initial_population(
         base,
         [
@@ -162,7 +183,9 @@ def r0(params: dict, mosquitoes_per_human: float = MOSQUITOES_PER_HUMAN) -> floa
     """Basic reproduction number from the two-type next-generation matrix.
 
     Ignores human mortality during infection (negligible). Uses the equilibrium age
-    distribution set by ``build_model``.
+    distribution set by ``build_model``, the mean mosquito density (so with seasonality
+    this is the season-averaged R0; at peak density it is up to ``sqrt(1 + amplitude)``
+    times higher), and the bite rate with ``bite_reduction`` applied.
     """
     p = {**DEFAULT_PARAMS, **params}
     m = mosquitoes_per_human
@@ -173,7 +196,7 @@ def r0(params: dict, mosquitoes_per_human: float = MOSQUITOES_PER_HUMAN) -> floa
     weighted = (w * n).sum()
     mu = 1.0 / p["mosquito_lifespan"]
     survive_eip = (1.0 / p["eip"]) / (1.0 / p["eip"] + mu)
-    a = p["bite_rate"]
+    a = p["bite_rate"] * (1.0 - p["bite_reduction"])
     # Humans in age j infected by one mosquito over its infectious life
     m_to_h = a / mu * p["p_mh"] * w * s * n / weighted
     # Mosquitoes infected (and surviving the EIP) by one infectious human in age j

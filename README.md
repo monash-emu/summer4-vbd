@@ -6,16 +6,18 @@ No real data; all parameters are illustrative.
 
 - **Humans**: SEIRS in four age bands (0–4, 5–14, 15–39, 40+), with ageing, and births
   replacing deaths.
-- **Mosquitoes**: SEI (with an extrinsic incubation period) and a constant population.
+- **Mosquitoes**: SEI (with an extrinsic incubation period). Emergence is seasonal (a cosine
+  over the year), so mosquito density and transmission cycle annually.
 - **Transmission**: Ross–Macdonald biting. Each age band has a relative bite rate
   (`rel_bite_<age>`, which shares out mosquito bites) and a relative susceptibility
-  (`rel_susc_<age>`).
+  (`rel_susc_<age>`). An optional intervention cuts bites per mosquito by `bite_reduction`
+  from `intervention_start`.
 
 | Path | What it is |
 |---|---|
 | `src/vbd_model/vbd_model/model.py` | `build_model()`, `DEFAULT_PARAMS`, and `r0()` (next-generation matrix) |
-| `tests/test_model.py` | edges, conservation, hand-checked infection rates, R0 = 1 threshold |
-| `notebooks/02-Vector-model.ipynb` | ten-year run, incidence and immunity by age, a halved-bite-rate scenario |
+| `tests/test_model.py` | edges, populations, seasonal mosquito dynamics, hand-checked infection rates, R0 = 1 threshold |
+| `notebooks/02-Vector-model.ipynb` | seasonal baseline, incidence and immunity by age, 10/20/30% bite-reduction scenarios |
 | `notebooks/01-Example.ipynb` | the template's SIR example with calibration, kept for reference |
 
 ```bash

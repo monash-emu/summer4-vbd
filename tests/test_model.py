@@ -1,4 +1,4 @@
-"""Checks on the vector-borne model: structure, conservation, rates and the R0 threshold."""
+"""Checks on the vector-borne model: structure, populations, rates, seasonality and R0."""
 
 from __future__ import annotations
 
@@ -49,20 +49,49 @@ def test_transitions_stay_within_species_and_age(compiled):
     assert dest == ["species=human_hstate=S_age=0"]
 
 
-def test_populations_constant(result):
+def test_human_population_constant(result):
     comps = result["compartments"]
     humans = np.asarray(comps.select(species["human"]).sum_by().values)
-    mosquitoes = np.asarray(comps.select(species["mosquito"]).sum_by().values)
     np.testing.assert_allclose(humans, HUMANS, rtol=1e-9)
-    np.testing.assert_allclose(mosquitoes, HUMANS * MOSQUITOES_PER_HUMAN, rtol=1e-9)
     by_age = np.asarray(comps.select(species["human"]).sum_by(age).to_pandas())
     np.testing.assert_allclose(by_age[-1], by_age[0], rtol=1e-9)
 
 
-def test_infection_rates_match_hand_calculation(result):
-    """Flow values at day 30 equal the Ross-Macdonald rate times the source stock."""
-    p = DEFAULT_PARAMS
+def test_mosquito_population_seasonal(result):
+    comps = result["compartments"]
+    mosquitoes = np.asarray(comps.select(species["mosquito"]).sum_by().values)
+    # Change in mosquitoes = emergence - deaths, integrated over the run
+    emerged = float(result["mosquito_emergence"].sum_by().integrate().scalar())
+    died = float(result["mosquito_death"].sum_by().integrate().scalar())
+    assert mosquitoes[-1] - mosquitoes[0] == pytest.approx(emerged - died, rel=1e-3)
+    # Over the second year (past the start-up transient) the mean is the nominal density
+    # and the population swings with the seasonal amplitude
+    second_year = mosquitoes[365:730]
+    mean = HUMANS * MOSQUITOES_PER_HUMAN
+    assert second_year.mean() == pytest.approx(mean, rel=0.01)
+    assert second_year.max() > 1.5 * mean and second_year.min() < 0.5 * mean
+    # Peak density lags the emergence peak by about a mosquito lifespan or less
+    peak_day = int(np.argmax(second_year))
+    assert 0 < peak_day - DEFAULT_PARAMS["peak_emergence_day"] < DEFAULT_PARAMS["mosquito_lifespan"] * 2
+
+
+def test_no_seasonality_keeps_mosquitoes_constant(compiled):
+    params = {**DEFAULT_PARAMS, "seasonal_amplitude": 0.0}
+    res = compiled.run(params, t0=0.0, t1=365.0, dt=1.0, solver="tsit5")
+    mosquitoes = np.asarray(res["compartments"].select(species["mosquito"]).sum_by().values)
+    np.testing.assert_allclose(mosquitoes, HUMANS * MOSQUITOES_PER_HUMAN, rtol=1e-9)
+
+
+@pytest.mark.parametrize("bite_reduction, intervention_start", [(0.0, 365.0), (0.25, 20.0), (0.25, 40.0)])
+def test_infection_rates_match_hand_calculation(compiled, bite_reduction, intervention_start):
+    """Flow values at day 30 equal the Ross-Macdonald rate times the source stock.
+
+    The intervention cuts bites per mosquito only once it has started.
+    """
+    p = {**DEFAULT_PARAMS, "bite_reduction": bite_reduction, "intervention_start": intervention_start}
+    result = compiled.run(p, t0=0.0, t1=60.0, dt=1.0, solver="tsit5")
     k = 30
+    bites = p["bite_rate"] * (1 - (bite_reduction if k >= intervention_start else 0.0))
     comps = result["compartments"]
     stock = lambda sel: np.asarray(comps.select(sel).sum_by(age).to_pandas())[k]  # noqa: E731
     n, i_h, s_h = stock(species["human"]), stock(hstate["I"]), stock(hstate["S"])
@@ -71,20 +100,27 @@ def test_infection_rates_match_hand_calculation(result):
     weighted = (w * n).sum()
     mosq = np.asarray(comps.select(mstate.present()).to_pandas())[k]  # S, E, I
 
-    human_expected = p["bite_rate"] * p["p_mh"] * mosq[2] / weighted * w * s * s_h
+    human_expected = bites * p["p_mh"] * mosq[2] / weighted * w * s * s_h
     human_actual = np.asarray(result["human_infection"].to_pandas())[k]
     np.testing.assert_allclose(human_actual, human_expected, rtol=1e-9)
 
-    mosq_expected = p["bite_rate"] * p["p_hm"] * (w * i_h).sum() / weighted * mosq[0]
+    mosq_expected = bites * p["p_hm"] * (w * i_h).sum() / weighted * mosq[0]
     mosq_actual = float(np.asarray(result["mosquito_infection"].sum_by().values)[k])
     assert mosq_actual == pytest.approx(mosq_expected, rel=1e-9)
 
 
+def test_r0_includes_bite_reduction():
+    reduced = {**DEFAULT_PARAMS, "bite_reduction": 0.2}
+    assert r0(reduced) == pytest.approx(0.8 * r0(DEFAULT_PARAMS))
+
+
 @pytest.mark.parametrize("target_r0, grows", [(0.9, False), (1.1, True)])
 def test_r0_is_the_threshold(compiled, target_r0, grows):
-    # R0 is proportional to bite_rate, so rescale it to hit the target exactly
-    bite_rate = DEFAULT_PARAMS["bite_rate"] * target_r0 / r0(DEFAULT_PARAMS)
-    params = {**DEFAULT_PARAMS, "bite_rate": bite_rate}
+    # R0 is proportional to bite_rate, so rescale it to hit the target exactly. Without
+    # seasonality, so the mosquito density is constant at the mean R0 assumes.
+    base = {**DEFAULT_PARAMS, "seasonal_amplitude": 0.0}
+    bite_rate = base["bite_rate"] * target_r0 / r0(base)
+    params = {**base, "bite_rate": bite_rate}
     assert r0(params) == pytest.approx(target_r0)
     res = compiled.run(params, t0=0.0, t1=720.0, dt=1.0, solver="tsit5")
     incidence = np.asarray(res["human_infection"].sum_by().values)
